@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "constant-time-crypto-verifier"
+version = "2.0.0"
+description = "Constant-Time Assembly & Microarchitectural Leakage Verifier"
+readme = "README.md"
+authors = [{ name = "Dr. Abu Suraih Sakhri", email = "abusuraih@example.com" }]
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Security/Cryptography",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+constant-time-crypto-verifier = "constant_time_verifier.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/abusuraihsakhri/constant-time-crypto-verifier"
+Repository = "https://github.com/abusuraihsakhri/constant-time-crypto-verifier.git"
