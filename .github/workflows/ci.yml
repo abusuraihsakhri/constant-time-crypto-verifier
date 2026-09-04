@@ -28,7 +28,13 @@ jobs:
 
     - name: Run Pytest Suite
       run: |
-        pytest -v
+        python -m pytest -p no:zarr -v
+
+    - name: Run CLI Batch Smoke Test
+      run: |
+        python cli.py batch -i sample.csv -o out_smoke.csv
+        python -c "import os; assert os.path.exists('out_smoke.csv'), 'Batch output missing!'"
+        rm -f out_smoke.csv
 
     - name: Security SAST & Zero-PHI Audit
       run: |
@@ -38,3 +44,4 @@ jobs:
         assert AuditLogger.verify_integrity() is True
         print('Security & Zero-PHI Audit Passed!')
         "
+
