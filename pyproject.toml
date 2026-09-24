@@ -1,27 +1,58 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=69"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "constant-time-crypto-verifier"
-version = "2.0.0"
-description = "Constant-Time Assembly & Microarchitectural Leakage Verifier"
+version = "2.1.0"
+description = "Timing-trace statistics and heuristic Python source analysis for potential data-dependent timing behavior"
 readme = "README.md"
-authors = [{ name = "Dr. Abu Suraih Sakhri", email = "abusuraih@example.com" }]
+authors = [{ name = "Abu Suraih Sakhri" }]
 license = { text = "MIT" }
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
-    "Topic :: Security/Cryptography",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Security :: Cryptography",
 ]
-requires-python = ">=3.9"
-dependencies = []
+requires-python = ">=3.10"
+dependencies = [
+    "pydantic>=2.7,<3",
+]
+
+[project.optional-dependencies]
+api = [
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
+]
+dev = [
+    "build>=1.2,<2",
+    "pip-audit>=2.9,<3",
+    "pytest>=8,<9",
+    "ruff>=0.13,<1",
+]
 
 [project.scripts]
-constant-time-crypto-verifier = "constant_time_verifier.cli:main"
+constant-time-crypto-verifier = "cli:main"
 
 [project.urls]
-Homepage = "https://github.com/abusuraihsakhri/constant-time-crypto-verifier"
-Repository = "https://github.com/abusuraihsakhri/constant-time-crypto-verifier.git"
+Homepage = "https://abusuraihsakhri.github.io/constant-time-crypto-verifier/"
+Repository = "https://github.com/abusuraihsakhri/constant-time-crypto-verifier"
+
+[tool.setuptools]
+py-modules = ["cli", "constant_time_crypto_verifier", "enrichment", "simulator"]
+
+[tool.setuptools.packages.find]
+include = ["agents*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+target-version = "py310"
+line-length = 110
+exclude = ["enrichment.py"]
+
+[tool.ruff.lint]
+select = ["E", "F"]

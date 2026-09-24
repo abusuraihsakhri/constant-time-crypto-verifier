@@ -1,11 +1,11 @@
-"""
-Pydantic v2 schemas and data definitions for Constant Time Crypto Verifier.
-Domain: Post-Quantum Cryptography & Hardware Security
-Standard: NIST FIPS 203/204/205 / ISO/IEC 17825 Standards
-"""
+"""Pydantic schemas for the repository's legacy threshold-worker interface."""
+
+from __future__ import annotations
+
 import datetime
 from enum import Enum
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List
+
 from pydantic import BaseModel, Field
 
 
@@ -22,13 +22,13 @@ class SystemIntegrityStatus(str, Enum):
 
 
 class SystemTaskPayload(BaseModel):
-    task_id: str = Field(..., description="Unique task / case identifier")
-    target_identifier: str = Field(..., description="Entity, patient key, or genomic/cryptographic target")
-    primary_metric: float = Field(..., description="Primary domain measurement or score")
-    secondary_metric: float = Field(default=0.0, description="Secondary kinetic or confidence score")
-    status_descriptor: str = Field(default="NOMINAL", description="Status code or phenotype descriptor")
-    is_critical_flag: bool = Field(default=False, description="Emergency escalation or high priority trigger")
-    attributes: Dict[str, Any] = Field(default_factory=dict, description="Metadata key-value pairs")
+    task_id: str = Field(..., description="Unique task identifier")
+    target_identifier: str = Field(..., description="Target identifier")
+    primary_metric: float = Field(..., description="Primary numeric metric")
+    secondary_metric: float = Field(default=0.0, description="Secondary numeric metric")
+    status_descriptor: str = Field(default="NOMINAL", description="Caller-provided status descriptor")
+    is_critical_flag: bool = Field(default=False, description="Caller-provided high-priority flag")
+    attributes: Dict[str, Any] = Field(default_factory=dict, description="Additional metadata")
     timestamp: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
 
 
@@ -39,7 +39,7 @@ class AgentAlert(BaseModel):
     summary: str
     technical_details: str
     actionable_remediation: str
-    standard_reference: str = "NIST FIPS 203/204/205 / ISO/IEC 17825 Standards"
+    standard_reference: str = "Repository-defined heuristic threshold"
     timestamp: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
 
     def to_dict(self) -> Dict[str, Any]:
@@ -49,7 +49,7 @@ class AgentAlert(BaseModel):
 class ConsensusDossier(BaseModel):
     dossier_id: str
     system_slug: str = "constant-time-crypto-verifier"
-    domain: str = "Post-Quantum Cryptography & Hardware Security"
+    domain: str = "Timing side-channel analysis"
     task_id: str
     target_identifier: str
     overall_urgency: UrgencyLevel
@@ -57,7 +57,7 @@ class ConsensusDossier(BaseModel):
     total_alerts: int
     critical_alerts_count: int
     alerts: List[AgentAlert]
-    standard_reference: str = "NIST FIPS 203/204/205 / ISO/IEC 17825 Standards"
+    standard_reference: str = "Repository-defined heuristic threshold"
     consensus_summary: str
     audit_hash: str
     timestamp: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())

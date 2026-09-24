@@ -1,0 +1,55 @@
+name: Deploy Pages
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "index.html"
+      - "styles.css"
+      - "app.js"
+      - "constant_time_crypto_verifier.py"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - name: Build static artifact
+        run: |
+          mkdir -p _site
+          cp index.html styles.css app.js constant_time_crypto_verifier.py _site/
+          touch _site/.nojekyll
+      - name: Static smoke test
+        run: |
+          python -m http.server 8080 --directory _site >/tmp/pages-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill $server_pid' EXIT
+          for attempt in {1..10}; do
+            if curl --fail --silent http://127.0.0.1:8080/index.html >/tmp/index.html; then
+              break
+            fi
+            sleep 1
+          done
+          grep -q "Constant-Time Crypto Verifier" /tmp/index.html
+          curl --fail --silent http://127.0.0.1:8080/constant_time_crypto_verifier.py | grep -q "ConstantTimeVerifierEngine"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,7 +1,7 @@
-"""
-Inference Engine supporting local Ollama, Claude, OpenAI, and deterministic Mock with Zero-PHI checks.
-"""
-from typing import Dict, Any, Optional
+"""Deterministic local text helper used by the legacy supervisor command."""
+
+from __future__ import annotations
+
 from .base import PHIGuard
 
 
@@ -11,21 +11,20 @@ class MockLLM:
 
     def invoke(self, prompt: str) -> str:
         PHIGuard.assert_no_phi(prompt)
-        return f"[{self.system_name} Deterministic Verification Engine]: Clinical & scientific analysis verified for query: '{prompt[:60]}...'. Parameters evaluated under NIST FIPS 203/204/205 / ISO/IEC 17825 Standards."
+        return (
+            f"[{self.system_name}] Deterministic helper received: {prompt[:120]!r}. "
+            "This response is informational and does not establish cryptographic conformance."
+        )
 
 
 class LLMFactory:
-    """Creates configured LLM client instances with zero-PHI protection."""
+    """Return the deterministic helper supported by this repository."""
 
     @staticmethod
     def create(provider: str = "mock", system_name: str = "Constant Time Crypto Verifier"):
-        prov = str(provider).lower()
-        if prov in ["mock", "deterministic", "test"]:
-            return MockLLM(system_name)
-        elif prov in ["ollama", "local"]:
-            return MockLLM(system_name)
-        elif prov in ["claude", "anthropic"]:
-            return MockLLM(system_name)
-        elif prov in ["openai", "gpt4"]:
-            return MockLLM(system_name)
+        provider_name = str(provider).lower()
+        if provider_name not in {"mock", "deterministic", "test"}:
+            raise ValueError(
+                f"unsupported model provider {provider!r}; only the deterministic local helper is implemented"
+            )
         return MockLLM(system_name)

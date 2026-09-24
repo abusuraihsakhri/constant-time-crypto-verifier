@@ -1,47 +1,53 @@
-name: Constant Time Crypto Verifier CI/CD & Security Verification
+name: CI
 
 on:
   push:
-    branches: [ master, main ]
+    branches: [master, main, "audit/**"]
   pull_request:
-    branches: [ master, main ]
+    branches: [master, main]
+
+permissions:
+  contents: read
 
 jobs:
-  test-and-audit:
+  test:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ matrix.python-version }}
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install fastapi uvicorn pydantic pytest
+      - name: Install package and test tools
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install ".[api,dev]"
 
-    - name: Run Pytest Suite
-      run: |
-        python -m pytest -p no:zarr -v
+      - name: Static checks
+        run: |
+          python -m compileall -q .
+          ruff check cli.py constant_time_crypto_verifier.py agents/base.py agents/api.py agents/llm_factory.py agents/models.py agents/supervisor.py agents/workers.py tests/test_constant_time_crypto_engine.py tests/test_constant_time_crypto_verifier.py tests/test_cli_core.py
 
-    - name: Run CLI Batch Smoke Test
-      run: |
-        python cli.py batch -i sample.csv -o out_smoke.csv
-        python -c "import os; assert os.path.exists('out_smoke.csv'), 'Batch output missing!'"
-        rm -f out_smoke.csv
+      - name: Unit tests
+        run: python -m pytest
 
-    - name: Security SAST & Zero-PHI Audit
-      run: |
-        python -c "
-        from agents.base import PHIGuard, AuditLogger
-        import pytest
-        assert AuditLogger.verify_integrity() is True
-        print('Security & Zero-PHI Audit Passed!')
-        "
+      - name: Installed CLI smoke test
+        run: |
+          constant-time-crypto-verifier --help
+          constant-time-crypto-verifier batch -i sample.csv -o out_smoke.csv
+          test -s out_smoke.csv
+          rm -f out_smoke.csv
 
+      - name: Build distribution
+        run: python -m build
+
+      - name: Dependency audit
+        run: pip-audit --skip-editable
