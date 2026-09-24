@@ -12,7 +12,9 @@ from typing import Iterable
 from constant_time_crypto_verifier import ConstantTimeVerifierEngine
 
 
-def _read_timing_columns(path: str, class0_column: str, class1_column: str) -> tuple[list[float], list[float]]:
+def _read_timing_columns(
+    path: str, class0_column: str, class1_column: str
+) -> tuple[list[float], list[float]]:
     class0: list[float] = []
     class1: list[float] = []
     with open(path, newline="", encoding="utf-8-sig") as handle:
@@ -183,7 +185,8 @@ def _run_legacy(args: argparse.Namespace) -> int:
             from agents.api import app
         except ImportError as exc:
             raise RuntimeError(
-                "API dependencies are not installed. Install with: pip install 'constant-time-crypto-verifier[api]'"
+                "API dependencies are not installed. Install with: "
+                "pip install 'constant-time-crypto-verifier[api]'"
             ) from exc
         uvicorn.run(app, host=args.host, port=args.port)
         return 0
