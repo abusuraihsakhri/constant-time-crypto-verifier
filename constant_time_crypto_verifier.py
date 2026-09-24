@@ -22,6 +22,7 @@ import io
 import json
 import math
 import random
+import re
 import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Callable, List, Optional, Tuple
@@ -336,12 +337,32 @@ class ConstantTimeVerifierEngine:
         return cls.run_welch_t_test(class0_times, class1_times)
 
     @classmethod
-    def _expression_mentions_secret(cls, node: ast.AST) -> bool:
-        try:
-            text = ast.unparse(node).lower()
-        except Exception:
+    def _identifier_mentions_secret(cls, identifier: str) -> bool:
+        """Return whether an identifier contains a secret-related lexical token.
+
+        Matching is token-based rather than raw-substring based so unrelated names such
+        as 'monkey' do not match the keyword 'key'. Snake-case and camelCase/PascalCase
+        identifiers are split into lowercase lexical components.
+        """
+
+        if not isinstance(identifier, str) or not identifier:
             return False
-        return any(keyword in text for keyword in cls._SECRET_KEYWORDS)
+        expanded = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", identifier)
+        tokens = {token for token in re.split(r"[^A-Za-z0-9]+", expanded.lower()) if token}
+        return bool(tokens & cls._SECRET_KEYWORDS)
+
+    @classmethod
+    def _expression_mentions_secret(cls, node: ast.AST) -> bool:
+        """Inspect identifier tokens in an expression for secret-like names."""
+
+        for child in ast.walk(node):
+            if isinstance(child, ast.Name) and cls._identifier_mentions_secret(child.id):
+                return True
+            if isinstance(child, ast.Attribute) and cls._identifier_mentions_secret(child.attr):
+                return True
+            if isinstance(child, ast.arg) and cls._identifier_mentions_secret(child.arg):
+                return True
+        return False
 
     @classmethod
     def scan_source_code_ast(cls, source_code: str) -> StaticASTAuditResult:
@@ -409,27 +430,44 @@ class ConstantTimeVerifierEngine:
                     )
                 )
             elif isinstance(node, (ast.For, ast.While)):
-                loop_mentions_secret = cls._expression_mentions_secret(node)
-                if loop_mentions_secret:
-                    for child in ast.walk(node):
-                        if isinstance(child, (ast.Return, ast.Break)):
-                            findings.append(
-                                StaticCodeVulnerability(
-                                    child.lineno,
-                                    "SECRET_DEPENDENT_EARLY_EXIT",
-                                    "MEDIUM",
-                                    snippet(child.lineno, "early exit"),
-                                    (
-                                        "A loop involving secret-like identifiers contains an early exit "
-                                        "and may run for a data-dependent duration."
-                                    ),
-                                    (
-                                        "Process the full fixed-size input with a vetted "
-                                        "comparison/accumulation primitive."
-                                    ),
-                                )
-                            )
-                            break
+                candidate_exits: List[ast.AST] = []
+
+                # A while-loop whose continuation test is secret-dependent is itself
+                # data-dependent. Otherwise, only exits nested under a secret-dependent
+                # conditional should be reported.
+                if isinstance(node, ast.While) and cls._expression_mentions_secret(node.test):
+                    candidate_exits.extend(
+                        child for child in ast.walk(node) if isinstance(child, (ast.Return, ast.Break))
+                    )
+
+                for conditional in ast.walk(node):
+                    if isinstance(conditional, ast.If) and cls._expression_mentions_secret(
+                        conditional.test
+                    ):
+                        candidate_exits.extend(
+                            child
+                            for child in ast.walk(conditional)
+                            if isinstance(child, (ast.Return, ast.Break))
+                        )
+
+                if candidate_exits:
+                    child = min(candidate_exits, key=lambda item: getattr(item, "lineno", 0))
+                    findings.append(
+                        StaticCodeVulnerability(
+                            child.lineno,
+                            "SECRET_DEPENDENT_EARLY_EXIT",
+                            "MEDIUM",
+                            snippet(child.lineno, "early exit"),
+                            (
+                                "An exit from this loop is controlled by a secret-like condition "
+                                "and may make the iteration count data-dependent."
+                            ),
+                            (
+                                "Process the full fixed-size input with a vetted "
+                                "comparison/accumulation primitive."
+                            ),
+                        )
+                    )
             elif isinstance(node, ast.BinOp) and isinstance(
                 node.op, (ast.Div, ast.FloorDiv, ast.Mod)
             ):
