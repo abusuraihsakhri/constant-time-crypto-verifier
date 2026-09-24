@@ -387,7 +387,10 @@ class ConstantTimeVerifierEngine:
                         "HIGH",
                         snippet(node.lineno, test_text),
                         "A branch condition appears to depend on a secret-like identifier.",
-                        "Use a vetted constant-time primitive or redesign the data flow to avoid secret-dependent branching.",
+                        (
+                            "Use a vetted constant-time primitive or redesign the data flow "
+                            "to avoid secret-dependent branching."
+                        ),
                     )
                 )
             elif isinstance(node, ast.Subscript) and cls._expression_mentions_secret(node.slice):
@@ -398,7 +401,10 @@ class ConstantTimeVerifierEngine:
                         "SECRET_INDEXED_LOOKUP",
                         "HIGH",
                         snippet(node.lineno, slice_text),
-                        "A lookup index appears to depend on a secret-like identifier and may affect cache access patterns.",
+                        (
+                            "A lookup index appears to depend on a secret-like identifier and may "
+                            "affect cache access patterns."
+                        ),
                         "Prefer a vetted implementation designed to avoid secret-dependent memory access.",
                     )
                 )
@@ -413,8 +419,14 @@ class ConstantTimeVerifierEngine:
                                     "SECRET_DEPENDENT_EARLY_EXIT",
                                     "MEDIUM",
                                     snippet(child.lineno, "early exit"),
-                                    "A loop involving secret-like identifiers contains an early exit and may run for a data-dependent duration.",
-                                    "Process the full fixed-size input with a vetted comparison/accumulation primitive.",
+                                    (
+                                        "A loop involving secret-like identifiers contains an early exit "
+                                        "and may run for a data-dependent duration."
+                                    ),
+                                    (
+                                        "Process the full fixed-size input with a vetted "
+                                        "comparison/accumulation primitive."
+                                    ),
                                 )
                             )
                             break
@@ -429,8 +441,14 @@ class ConstantTimeVerifierEngine:
                             "SECRET_VARIABLE_LATENCY_ARITH",
                             "MEDIUM",
                             snippet(node.lineno, expr),
-                            "Division or modulo involving secret-like identifiers may have operand-dependent latency on some targets.",
-                            "Use a vetted constant-time reduction strategy appropriate to the target architecture.",
+                            (
+                                "Division or modulo involving secret-like identifiers may have "
+                                "operand-dependent latency on some targets."
+                            ),
+                            (
+                                "Use a vetted constant-time reduction strategy appropriate "
+                                "to the target architecture."
+                            ),
                         )
                     )
 
