@@ -504,4 +504,26 @@ class ConstantTimeVerifierEngine:
         """
 
         def parse_samples(value: str) -> List[float]:
-            normalized = value.replace(";", " ").replac
+            normalized = value.replace(";", " ").replace(",", " ")
+            return [float(token) for token in normalized.split() if token]
+
+        reader = csv.DictReader(io.StringIO(csv_text))
+        required = {"target_name", "class0_samples_ns", "class1_samples_ns"}
+        if reader.fieldnames is None or not required.issubset(set(reader.fieldnames)):
+            missing = sorted(required - set(reader.fieldnames or []))
+            raise ValueError(f"batch CSV is missing required columns: {', '.join(missing)}")
+
+        reports: List[VerificationReport] = []
+        for row_number, row in enumerate(reader, start=2):
+            try:
+                reports.append(
+                    cls.verify_target(
+                        target_name=row["target_name"],
+                        source_code=row.get("source_code") or None,
+                        tvla_samples_c0=parse_samples(row["class0_samples_ns"]),
+                        tvla_samples_c1=parse_samples(row["class1_samples_ns"]),
+                    )
+                )
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"invalid batch row {row_number}: {exc}") from exc
+        return reports
