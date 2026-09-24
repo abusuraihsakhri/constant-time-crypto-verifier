@@ -25,7 +25,10 @@ class InvariantQCWorker:
                     f"Primary metric {payload.primary_metric:.2f} exceeds the repository-defined "
                     "example threshold of 25.00."
                 ),
-                actionable_remediation="Review the input and choose a domain-appropriate threshold before operational use.",
+                actionable_remediation=(
+                    "Review the input and choose a domain-appropriate threshold "
+                    "before operational use."
+                ),
             )
         ]
 
@@ -44,9 +47,12 @@ class SafetyEscalationWorker:
                 urgency=UrgencyLevel.CRITICAL_STAT if payload.is_critical_flag else UrgencyLevel.ELEVATED,
                 summary="Priority threshold triggered",
                 technical_details=(
-                    f"critical_flag={payload.is_critical_flag}; secondary_metric={payload.secondary_metric:.2f}."
+                    f"critical_flag={payload.is_critical_flag}; "
+                    f"secondary_metric={payload.secondary_metric:.2f}."
                 ),
-                actionable_remediation="Review the task using thresholds appropriate to the actual measurement domain.",
+                actionable_remediation=(
+                    "Review the task using thresholds appropriate to the actual measurement domain."
+                ),
             )
         ]
 
@@ -65,7 +71,9 @@ class ProtocolConformanceWorker:
                 origin_worker="ProtocolConformanceWorker",
                 urgency=UrgencyLevel.ELEVATED,
                 summary="Status descriptor indicates an anomaly",
-                technical_details=f"Descriptor {payload.status_descriptor!r} matched a configured anomaly keyword.",
+                technical_details=(
+                    f"Descriptor {payload.status_descriptor!r} matched a configured anomaly keyword."
+                ),
                 actionable_remediation="Inspect the originating measurement or validation result.",
             )
         ]
