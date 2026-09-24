@@ -15,5 +15,8 @@ def test_tvla_cli(tmp_path):
 
 def test_scan_cli_returns_nonzero_for_finding(tmp_path):
     source = tmp_path / "sample.py"
-    source.write_text("def f(secret, x):\n    if secret == x:\n        return True\n    return False\n", encoding="utf-8")
+    source.write_text(
+        "def f(secret, x):\n    if secret == x:\n        return True\n    return False\n",
+        encoding="utf-8",
+    )
     assert main(["scan", str(source)]) == 1
