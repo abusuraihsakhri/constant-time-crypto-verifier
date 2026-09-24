@@ -128,4 +128,111 @@ def _run_legacy(args: argparse.Namespace) -> int:
         print(supervisor.query_supervisory_chat(" ".join(args.query)))
         return 0
 
-    if a
+    if args.command == "verify-audit":
+        trail = AuditLogger.get_trail()
+        valid = AuditLogger.verify_integrity()
+        print(f"Audit blocks: {len(trail)} | integrity verified: {valid}")
+        return 0 if valid else 1
+
+    if args.command == "batch":
+        with open(args.input, mode="r", encoding="utf-8-sig", newline="") as handle:
+            reader = csv.DictReader(handle)
+            fieldnames = list(reader.fieldnames or [])
+            rows = list(reader)
+
+        required = {"task_id", "target_identifier", "primary_metric"}
+        missing = required - set(fieldnames)
+        if missing:
+            raise ValueError(f"batch CSV is missing columns: {', '.join(sorted(missing))}")
+
+        out_fields = fieldnames + ["overall_urgency", "integrity_status", "total_alerts", "audit_hash"]
+        out_rows = []
+        for row_number, row in enumerate(rows, start=2):
+            try:
+                payload = SystemTaskPayload(
+                    task_id=row["task_id"],
+                    target_identifier=row["target_identifier"],
+                    primary_metric=float(row["primary_metric"]),
+                    secondary_metric=float(row.get("secondary_metric") or 0.0),
+                    status_descriptor=row.get("status_descriptor") or "NOMINAL",
+                    is_critical_flag=str(row.get("is_critical_flag", "")).strip().lower()
+                    in {"true", "1", "t", "yes"},
+                )
+            except ValueError as exc:
+                raise ValueError(f"invalid batch row {row_number}: {exc}") from exc
+            dossier = supervisor.process_task(payload)
+            enriched = dict(row)
+            enriched.update(
+                overall_urgency=dossier.overall_urgency.value,
+                integrity_status=dossier.integrity_status.value,
+                total_alerts=dossier.total_alerts,
+                audit_hash=dossier.audit_hash,
+            )
+            out_rows.append(enriched)
+
+        with open(args.output, mode="w", encoding="utf-8", newline="") as handle:
+            writer = csv.DictWriter(handle, fieldnames=out_fields)
+            writer.writeheader()
+            writer.writerows(out_rows)
+        print(f"Processed {len(out_rows)} records -> {args.output}")
+        return 0
+
+    if args.command == "serve":
+        try:
+            import uvicorn
+            from agents.api import app
+        except ImportError as exc:
+            raise RuntimeError(
+                "API dependencies are not installed. Install with: pip install 'constant-time-crypto-verifier[api]'"
+            ) from exc
+        uvicorn.run(app, host=args.host, port=args.port)
+        return 0
+
+    raise ValueError(f"unsupported legacy command: {args.command}")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="constant-time-crypto-verifier",
+        description="Analyze Python source and timing traces for potential data-dependent timing behavior.",
+    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    scan = subparsers.add_parser("scan", help="Heuristically scan a Python source file")
+    scan.add_argument("source")
+    scan.add_argument("--json", action="store_true")
+
+    tvla = subparsers.add_parser("tvla", help="Run Welch timing analysis on two CSV columns")
+    tvla.add_argument("timings")
+    tvla.add_argument("--class0-column", default="class0_ns")
+    tvla.add_argument("--class1-column", default="class1_ns")
+    tvla.add_argument("--json", action="store_true")
+
+    verify = subparsers.add_parser("verify", help="Combine optional source and timing checks")
+    verify.add_argument("--name", default="target")
+    verify.add_argument("--source")
+    verify.add_argument("--timings")
+    verify.add_argument("--class0-column", default="class0_ns")
+    verify.add_argument("--class1-column", default="class1_ns")
+    verify.add_argument("--json", action="store_true")
+
+    audit = subparsers.add_parser("audit", help="Run the legacy threshold-worker evaluation")
+    audit.add_argument("--task-id", default="TASK-001")
+    audit.add_argument("--target", default="TARGET-01")
+    audit.add_argument("--primary", type=float, default=0.0)
+    audit.add_argument("--secondary", type=float, default=0.0)
+    audit.add_argument("--critical", action="store_true")
+    audit.add_argument("--status", default="NOMINAL")
+
+    chat = subparsers.add_parser("chat", help="Query the deterministic legacy helper")
+    chat.add_argument("query", nargs="+")
+
+    batch = subparsers.add_parser("batch", help="Process legacy threshold-worker CSV records")
+    batch.add_argument("-i", "--input", required=True)
+    batch.add_argument("-o", "--output", default="results.csv")
+
+    subparsers.add_parser("verify-audit", help="Verify the in-memory audit chain")
+
+    serve = subparsers.add_parser("serve", help="Launch the optional FastAPI server")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8000)
