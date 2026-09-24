@@ -1,63 +1,79 @@
-"""
-Specialized Domain Worker Agents for Constant Time Crypto Verifier.
-Domain: Post-Quantum Cryptography & Hardware Security
-Standard: NIST FIPS 203/204/205 / ISO/IEC 17825 Standards
-"""
+"""Legacy threshold workers retained for backward-compatible CLI/API commands."""
+
+from __future__ import annotations
+
 import uuid
-from typing import Dict, Any, List, Optional
-from .models import SystemTaskPayload, AgentAlert, UrgencyLevel, SystemIntegrityStatus
+from typing import List
+
+from .models import AgentAlert, SystemTaskPayload, UrgencyLevel
 
 
 class InvariantQCWorker:
-    """Worker 1: Primary Mathematical & Protocol Boundary Auditor."""
+    """Flag a primary metric above the repository's example threshold."""
 
     @classmethod
     def evaluate(cls, payload: SystemTaskPayload) -> List[AgentAlert]:
-        alerts = []
-        if payload.primary_metric > 25.0:
-            alerts.append(AgentAlert(
+        if payload.primary_metric <= 25.0:
+            return []
+        return [
+            AgentAlert(
                 alert_id=f"QC-{uuid.uuid4().hex[:6]}",
                 origin_worker="InvariantQCWorker",
                 urgency=UrgencyLevel.ELEVATED,
-                summary="Primary Metric Threshold Exceeded",
-                technical_details=f"Primary measurement ({payload.primary_metric:.2f}) exceeds upper reference limit (25.00) under NIST FIPS 203/204/205 / ISO/IEC 17825 Standards.",
-                actionable_remediation="Initiate recalibration workflow and review secondary parameters.",
-            ))
-        return alerts
+                summary="Primary metric threshold exceeded",
+                technical_details=(
+                    f"Primary metric {payload.primary_metric:.2f} exceeds the repository-defined "
+                    "example threshold of 25.00."
+                ),
+                actionable_remediation=(
+                    "Review the input and choose a domain-appropriate threshold "
+                    "before operational use."
+                ),
+            )
+        ]
 
 
 class SafetyEscalationWorker:
-    """Worker 2: Safety Boundary, Toxicity & Emergency Interlock Worker."""
+    """Flag an explicit critical marker or a high secondary example metric."""
 
     @classmethod
     def evaluate(cls, payload: SystemTaskPayload) -> List[AgentAlert]:
-        alerts = []
-        if payload.is_critical_flag or payload.secondary_metric > 12.0:
-            alerts.append(AgentAlert(
+        if not payload.is_critical_flag and payload.secondary_metric <= 12.0:
+            return []
+        return [
+            AgentAlert(
                 alert_id=f"SAFE-{uuid.uuid4().hex[:6]}",
                 origin_worker="SafetyEscalationWorker",
                 urgency=UrgencyLevel.CRITICAL_STAT if payload.is_critical_flag else UrgencyLevel.ELEVATED,
-                summary="Critical Safety Interlock Triggered",
-                technical_details=f"CriticalFlag={payload.is_critical_flag} with secondary index {payload.secondary_metric:.2f}.",
-                actionable_remediation="Execute immediate closed-loop escalation and notify attending supervisor.",
-            ))
-        return alerts
+                summary="Priority threshold triggered",
+                technical_details=(
+                    f"critical_flag={payload.is_critical_flag}; "
+                    f"secondary_metric={payload.secondary_metric:.2f}."
+                ),
+                actionable_remediation=(
+                    "Review the task using thresholds appropriate to the actual measurement domain."
+                ),
+            )
+        ]
 
 
 class ProtocolConformanceWorker:
-    """Worker 3: Spec Conformance, Anomaly Triage & Discordance Checker."""
+    """Flag status strings that explicitly indicate a failure or anomaly."""
 
     @classmethod
     def evaluate(cls, payload: SystemTaskPayload) -> List[AgentAlert]:
-        alerts = []
-        desc_upper = str(payload.status_descriptor).upper()
-        if any(w in desc_upper for w in ["DISCORDANT", "ANOMALY", "MUTANT", "VIOLATION", "FAIL", "REJECT"]):
-            alerts.append(AgentAlert(
+        descriptor = str(payload.status_descriptor).upper()
+        if not any(word in descriptor for word in ["DISCORDANT", "ANOMALY", "VIOLATION", "FAIL", "REJECT"]):
+            return []
+        return [
+            AgentAlert(
                 alert_id=f"CONF-{uuid.uuid4().hex[:6]}",
                 origin_worker="ProtocolConformanceWorker",
                 urgency=UrgencyLevel.ELEVATED,
-                summary="Protocol Conformance Discordance Detected",
-                technical_details=f"Descriptor '{payload.status_descriptor}' indicates discordance with NIST FIPS 203/204/205 / ISO/IEC 17825 Standards standards.",
-                actionable_remediation="Re-evaluate input specimen or rerun secondary confirmation assay.",
-            ))
-        return alerts
+                summary="Status descriptor indicates an anomaly",
+                technical_details=(
+                    f"Descriptor {payload.status_descriptor!r} matched a configured anomaly keyword."
+                ),
+                actionable_remediation="Inspect the originating measurement or validation result.",
+            )
+        ]

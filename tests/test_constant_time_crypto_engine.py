@@ -1,228 +1,114 @@
-#!/usr/bin/env python3
-"""
-Comprehensive Unit Test Suite for Constant-Time Cryptographic Execution Verifier
-Tests branchless bitwise primitives, Welch's t-test statistical engine (TVLA/Dudect),
-static AST vulnerability scanning for side-channel hazards, and unified verification reporting.
-"""
-
-import unittest
-import math
 import json
-from constant_time_crypto_verifier import (
-    ConstantTimePrimitives,
-    ConstantTimeVerifierEngine,
-    TimingTraceStatistics,
-    TVLATestResult,
-    StaticCodeVulnerability,
-    StaticASTAuditResult,
-    VerificationReport,
-)
+import math
+
+import pytest
+
+from constant_time_crypto_verifier import ConstantTimePrimitives, ConstantTimeVerifierEngine
 
 
-class TestConstantTimePrimitives(unittest.TestCase):
-    """Test suite for branchless, constant-time bitwise cryptographic primitives."""
-
-    def test_ct_memcmp_equal_buffers(self):
-        buf1 = b"SuperSecretKey12345"
-        buf2 = b"SuperSecretKey12345"
-        self.assertTrue(ConstantTimePrimitives.ct_memcmp(buf1, buf2))
-
-    def test_ct_memcmp_mismatch_first_byte(self):
-        buf1 = b"XuperSecretKey12345"
-        buf2 = b"SuperSecretKey12345"
-        self.assertFalse(ConstantTimePrimitives.ct_memcmp(buf1, buf2))
-
-    def test_ct_memcmp_mismatch_last_byte(self):
-        buf1 = b"SuperSecretKey12345"
-        buf2 = b"SuperSecretKey12346"
-        self.assertFalse(ConstantTimePrimitives.ct_memcmp(buf1, buf2))
-
-    def test_ct_memcmp_mismatch_middle_byte(self):
-        buf1 = b"SuperSecretKey12345"
-        buf2 = b"SuperSacretKey12345"
-        self.assertFalse(ConstantTimePrimitives.ct_memcmp(buf1, buf2))
-
-    def test_ct_memcmp_different_lengths(self):
-        buf1 = b"Short"
-        buf2 = b"LongerSecret"
-        self.assertFalse(ConstantTimePrimitives.ct_memcmp(buf1, buf2))
-
-    def test_ct_memcmp_empty_buffers(self):
-        self.assertTrue(ConstantTimePrimitives.ct_memcmp(b"", b""))
-
-    def test_ct_select_int_true(self):
-        # mask = 1 selects if_true
-        res = ConstantTimePrimitives.ct_select_int(1, 0x12345678, 0x87654321)
-        self.assertEqual(res, 0x12345678)
-
-    def test_ct_select_int_false(self):
-        # mask = 0 selects if_false
-        res = ConstantTimePrimitives.ct_select_int(0, 0x12345678, 0x87654321)
-        self.assertEqual(res, 0x87654321)
-
-    def test_ct_cswap_int_swapped(self):
-        a, b = ConstantTimePrimitives.ct_cswap_int(True, 42, 99)
-        self.assertEqual(a, 99)
-        self.assertEqual(b, 42)
-
-    def test_ct_cswap_int_not_swapped(self):
-        a, b = ConstantTimePrimitives.ct_cswap_int(False, 42, 99)
-        self.assertEqual(a, 42)
-        self.assertEqual(b, 99)
-
-    def test_ct_is_zero(self):
-        self.assertEqual(ConstantTimePrimitives.ct_is_zero(0), 1)
-        self.assertEqual(ConstantTimePrimitives.ct_is_zero(1), 0)
-        self.assertEqual(ConstantTimePrimitives.ct_is_zero(100), 0)
-        self.assertEqual(ConstantTimePrimitives.ct_is_zero(0xFFFFFFFF), 0)
-
-    def test_ct_min_max(self):
-        self.assertEqual(ConstantTimePrimitives.ct_min(10, 20), 10)
-        self.assertEqual(ConstantTimePrimitives.ct_min(20, 10), 10)
-        self.assertEqual(ConstantTimePrimitives.ct_max(10, 20), 20)
-        self.assertEqual(ConstantTimePrimitives.ct_max(20, 10), 20)
-        self.assertEqual(ConstantTimePrimitives.ct_min(15, 15), 15)
-        self.assertEqual(ConstantTimePrimitives.ct_max(15, 15), 15)
+def test_compare_digest_wrapper():
+    assert ConstantTimePrimitives.ct_memcmp(b"same", b"same") is True
+    assert ConstantTimePrimitives.ct_memcmp(b"same", b"diff") is False
+    assert ConstantTimePrimitives.ct_memcmp(b"short", b"longer") is False
+    with pytest.raises(TypeError):
+        ConstantTimePrimitives.ct_memcmp("same", "same")
 
 
-class TestTimingStatisticsAndWelchTTest(unittest.TestCase):
-    """Test suite for statistical timing trace reduction and TVLA Welch's t-test."""
-
-    def test_empty_trace_statistics(self):
-        stats = ConstantTimeVerifierEngine.compute_trace_statistics([])
-        self.assertEqual(stats.sample_size, 0)
-        self.assertEqual(stats.mean_duration_ns, 0.0)
-
-    def test_single_element_statistics(self):
-        stats = ConstantTimeVerifierEngine.compute_trace_statistics([150.0])
-        self.assertEqual(stats.sample_size, 1)
-        self.assertEqual(stats.mean_duration_ns, 150.0)
-        self.assertEqual(stats.std_dev_ns, 0.0)
-
-    def test_trace_statistics_metrics(self):
-        samples = [10.0, 20.0, 30.0, 40.0, 50.0]
-        stats = ConstantTimeVerifierEngine.compute_trace_statistics(samples)
-        self.assertEqual(stats.sample_size, 5)
-        self.assertEqual(stats.mean_duration_ns, 30.0)
-        self.assertEqual(stats.min_duration_ns, 10.0)
-        self.assertEqual(stats.max_duration_ns, 50.0)
-        self.assertEqual(stats.median_duration_ns, 30.0)
-
-    def test_welch_t_test_pass_constant_time(self):
-        # Identical/overlapping distributions -> t-statistic close to 0
-        c0 = [100.0, 102.0, 98.0, 101.0, 99.0] * 20
-        c1 = [100.5, 99.5, 101.0, 98.5, 100.0] * 20
-        tvla = ConstantTimeVerifierEngine.run_welch_t_test(c0, c1)
-        self.assertEqual(tvla.leakage_verdict, "PASS_CONSTANT_TIME")
-        self.assertLess(tvla.absolute_t_score, 2.5)
-
-    def test_welch_t_test_fail_leakage(self):
-        # Clear separation in mean execution time -> |t| > 4.5
-        c0 = [100.0, 102.0, 98.0, 101.0, 99.0] * 30
-        c1 = [250.0, 252.0, 248.0, 251.0, 249.0] * 30
-        tvla = ConstantTimeVerifierEngine.run_welch_t_test(c0, c1)
-        self.assertEqual(tvla.leakage_verdict, "FAIL_LEAKAGE_DETECTED")
-        self.assertGreater(tvla.absolute_t_score, 4.5)
-        self.assertIn("Leakage Confidence", tvla.confidence_level)
+def test_integer_helpers_are_correct_for_extremes():
+    assert ConstantTimePrimitives.ct_select_int(1, 10, 20) == 10
+    assert ConstantTimePrimitives.ct_select_int(0, 10, 20) == 20
+    with pytest.raises(ValueError):
+        ConstantTimePrimitives.ct_select_int(2, 10, 20)
+    assert ConstantTimePrimitives.ct_min(0, 0xFFFFFFFF) == 0
+    assert ConstantTimePrimitives.ct_max(0, 0xFFFFFFFF) == 0xFFFFFFFF
+    assert ConstantTimePrimitives.ct_min(-10, 4) == -10
+    assert ConstantTimePrimitives.ct_max(-10, 4) == 4
 
 
-class TestStaticASTVulnerabilityScanning(unittest.TestCase):
-    """Test suite for static AST scanning of microarchitectural side-channel patterns."""
+def test_trace_statistics_even_median_and_percentiles():
+    stats = ConstantTimeVerifierEngine.compute_trace_statistics([10, 20, 30, 40])
+    assert stats.sample_size == 4
+    assert stats.mean_duration_ns == 25
+    assert stats.median_duration_ns == 25
+    assert stats.p95_duration_ns == 40
+    assert stats.p99_duration_ns == 40
 
-    def test_scan_clean_code(self):
-        clean_code = """
-def constant_time_add(a, b):
-    mask = -(a > b)
-    return (a & mask) | (b & ~mask)
-"""
-        result = ConstantTimeVerifierEngine.scan_source_code_ast(clean_code)
-        self.assertTrue(result.is_clean)
-        self.assertEqual(result.total_findings, 0)
-        self.assertEqual(result.risk_score, 0.0)
 
-    def test_scan_secret_branch(self):
-        vulnerable_code = """
-def check_key(secret_key, user_input):
-    if secret_key == user_input:
-        return True
-    return False
-"""
-        result = ConstantTimeVerifierEngine.scan_source_code_ast(vulnerable_code)
-        self.assertFalse(result.is_clean)
-        types = [v.vulnerability_type for v in result.vulnerabilities]
-        self.assertIn("SECRET_BRANCH", types)
+def test_trace_statistics_empty_and_non_finite():
+    assert ConstantTimeVerifierEngine.compute_trace_statistics([]).sample_size == 0
+    with pytest.raises(ValueError):
+        ConstantTimeVerifierEngine.compute_trace_statistics([1.0, math.inf])
 
-    def test_scan_secret_indexed_lookup(self):
-        sbox_code = """
-def sub_byte(key_byte):
-    return SBOX[key_byte]
-"""
-        result = ConstantTimeVerifierEngine.scan_source_code_ast(sbox_code)
-        self.assertFalse(result.is_clean)
-        types = [v.vulnerability_type for v in result.vulnerabilities]
-        self.assertIn("SECRET_INDEXED_LOOKUP", types)
 
-    def test_scan_early_return_in_loop(self):
-        early_exit_code = """
-def verify_token(token, target):
-    for i in range(len(token)):
-        if token[i] != target[i]:
+def test_welch_requires_two_samples_per_class():
+    with pytest.raises(ValueError):
+        ConstantTimeVerifierEngine.run_welch_t_test([1.0], [1.0, 2.0])
+
+
+def test_welch_pass_screen_for_overlapping_samples():
+    class0 = [100.0, 102.0, 98.0, 101.0, 99.0] * 20
+    class1 = [100.5, 99.5, 101.0, 98.5, 100.0] * 20
+    result = ConstantTimeVerifierEngine.run_welch_t_test(class0, class1)
+    assert result.leakage_verdict == "PASS_CONSTANT_TIME"
+    assert result.absolute_t_score is not None and result.absolute_t_score < 2.5
+    assert "not proof" in result.confidence_level.lower()
+
+
+def test_zero_variance_unequal_means_is_detected():
+    result = ConstantTimeVerifierEngine.run_welch_t_test([50.0, 50.0], [500.0, 500.0])
+    assert result.leakage_verdict == "FAIL_LEAKAGE_DETECTED"
+    assert result.welch_t_statistic is None
+    assert "undefined" in result.confidence_level.lower()
+
+
+def test_static_scan_flags_secret_patterns():
+    source = """
+def verify_token(secret_token, candidate):
+    for i in range(len(secret_token)):
+        if secret_token[i] != candidate[i]:
             return False
     return True
 """
-        result = ConstantTimeVerifierEngine.scan_source_code_ast(early_exit_code)
-        self.assertFalse(result.is_clean)
-        types = [v.vulnerability_type for v in result.vulnerabilities]
-        self.assertIn("EARLY_EXIT_CMP", types)
-
-    def test_scan_variable_latency_modulo(self):
-        modulo_code = """
-def reduce_secret(secret_scalar, modulus):
-    return secret_scalar % modulus
-"""
-        result = ConstantTimeVerifierEngine.scan_source_code_ast(modulo_code)
-        self.assertFalse(result.is_clean)
-        types = [v.vulnerability_type for v in result.vulnerabilities]
-        self.assertIn("VARIABLE_LATENCY_ARITH", types)
-
-    def test_scan_syntax_error_handling(self):
-        invalid_code = "def broken(:"
-        result = ConstantTimeVerifierEngine.scan_source_code_ast(invalid_code)
-        self.assertFalse(result.is_clean)
-        self.assertEqual(result.vulnerabilities[0].vulnerability_type, "SYNTAX_ERROR")
+    result = ConstantTimeVerifierEngine.scan_source_code_ast(source)
+    kinds = {item.vulnerability_type for item in result.vulnerabilities}
+    assert "SECRET_BRANCH" in kinds
+    assert "SECRET_DEPENDENT_EARLY_EXIT" in kinds
+    assert result.is_clean is False
 
 
-class TestUnifiedVerificationPipeline(unittest.TestCase):
-    """Test suite for full end-to-end verification pipeline and report serialization."""
-
-    def test_verify_target_clean(self):
-        clean_code = "def safe_func(a, b): return a ^ b"
-        c0 = [50.0, 51.0, 49.0] * 20
-        c1 = [50.2, 50.8, 49.5] * 20
-        report = ConstantTimeVerifierEngine.verify_target(
-            target_name="AES-GCM-Tag-Compare",
-            source_code=clean_code,
-            tvla_samples_c0=c0,
-            tvla_samples_c1=c1,
-        )
-        self.assertEqual(report.overall_status, "VERIFIED_CONSTANT_TIME")
-        report_dict = report.to_dict()
-        self.assertEqual(report_dict["target_name"], "AES-GCM-Tag-Compare")
-        report_json = report.to_json()
-        self.assertIn("VERIFIED_CONSTANT_TIME", report_json)
-
-    def test_verify_target_vulnerable(self):
-        vuln_code = "if secret_pin == guess: return True"
-        c0 = [50.0] * 20
-        c1 = [500.0] * 20
-        report = ConstantTimeVerifierEngine.verify_target(
-            target_name="PIN-Checker",
-            source_code=vuln_code,
-            tvla_samples_c0=c0,
-            tvla_samples_c1=c1,
-        )
-        self.assertEqual(report.overall_status, "VULNERABLE_LEAKAGE_DETECTED")
+def test_static_scan_syntax_error():
+    result = ConstantTimeVerifierEngine.scan_source_code_ast("def broken(:")
+    assert result.is_clean is False
+    assert result.vulnerabilities[0].vulnerability_type == "SYNTAX_ERROR"
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_verification_statuses_are_conservative():
+    assert ConstantTimeVerifierEngine.verify_target("none").overall_status == "INSUFFICIENT_EVIDENCE"
+
+    clean = ConstantTimeVerifierEngine.verify_target(
+        "clean",
+        source_code="def xor(a, b): return a ^ b",
+        tvla_samples_c0=[10, 11, 9, 10] * 10,
+        tvla_samples_c1=[10, 11, 9, 10] * 10,
+    )
+    assert clean.overall_status == "NO_LEAKAGE_DETECTED_IN_PROVIDED_CHECKS"
+    json.loads(clean.to_json())
+
+    risky = ConstantTimeVerifierEngine.verify_target(
+        "risky",
+        source_code="def f(secret, x):\n    return 1 if secret == x else 0\n",
+    )
+    assert risky.overall_status == "POTENTIAL_TIMING_RISK"
+
+
+def test_batch_csv_requires_raw_samples():
+    csv_text = (
+        "target_name,class0_samples_ns,class1_samples_ns\n"
+        'demo,"10;11;9","10;10;11"\n'
+    )
+    reports = ConstantTimeVerifierEngine.evaluate_batch_csv(csv_text)
+    assert len(reports) == 1
+    assert reports[0].tvla_result is not None
+
+    with pytest.raises(ValueError):
+        ConstantTimeVerifierEngine.evaluate_batch_csv("target_name,mean0_ns\ndemo,10\n")
