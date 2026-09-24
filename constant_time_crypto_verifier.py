@@ -398,4 +398,110 @@ class ConstantTimeVerifierEngine:
                         "SECRET_INDEXED_LOOKUP",
                         "HIGH",
                         snippet(node.lineno, slice_text),
-                        "A lookup index appears to depend on a secret-like identifier and 
+                        "A lookup index appears to depend on a secret-like identifier and may affect cache access patterns.",
+                        "Prefer a vetted implementation designed to avoid secret-dependent memory access.",
+                    )
+                )
+            elif isinstance(node, (ast.For, ast.While)):
+                loop_mentions_secret = cls._expression_mentions_secret(node)
+                if loop_mentions_secret:
+                    for child in ast.walk(node):
+                        if isinstance(child, (ast.Return, ast.Break)):
+                            findings.append(
+                                StaticCodeVulnerability(
+                                    child.lineno,
+                                    "SECRET_DEPENDENT_EARLY_EXIT",
+                                    "MEDIUM",
+                                    snippet(child.lineno, "early exit"),
+                                    "A loop involving secret-like identifiers contains an early exit and may run for a data-dependent duration.",
+                                    "Process the full fixed-size input with a vetted comparison/accumulation primitive.",
+                                )
+                            )
+                            break
+            elif isinstance(node, ast.BinOp) and isinstance(
+                node.op, (ast.Div, ast.FloorDiv, ast.Mod)
+            ):
+                if cls._expression_mentions_secret(node):
+                    expr = ast.unparse(node)
+                    findings.append(
+                        StaticCodeVulnerability(
+                            node.lineno,
+                            "SECRET_VARIABLE_LATENCY_ARITH",
+                            "MEDIUM",
+                            snippet(node.lineno, expr),
+                            "Division or modulo involving secret-like identifiers may have operand-dependent latency on some targets.",
+                            "Use a vetted constant-time reduction strategy appropriate to the target architecture.",
+                        )
+                    )
+
+        deduped: List[StaticCodeVulnerability] = []
+        seen: set[tuple[int, str]] = set()
+        for finding in findings:
+            key = (finding.line_number, finding.vulnerability_type)
+            if key not in seen:
+                seen.add(key)
+                deduped.append(finding)
+
+        severity_weight = {"HIGH": 35.0, "MEDIUM": 20.0, "LOW": 10.0}
+        risk = min(100.0, sum(severity_weight.get(item.severity, 20.0) for item in deduped))
+        return StaticASTAuditResult(
+            is_clean=not deduped,
+            vulnerabilities=deduped,
+            total_findings=len(deduped),
+            risk_score=risk,
+        )
+
+    @classmethod
+    def verify_target(
+        cls,
+        target_name: str,
+        source_code: Optional[str] = None,
+        tvla_samples_c0: Optional[List[float]] = None,
+        tvla_samples_c1: Optional[List[float]] = None,
+    ) -> VerificationReport:
+        """Combine any supplied static and timing checks into a conservative status."""
+
+        ast_result = cls.scan_source_code_ast(source_code) if source_code is not None else None
+        has_c0 = tvla_samples_c0 is not None
+        has_c1 = tvla_samples_c1 is not None
+        if has_c0 != has_c1:
+            raise ValueError("both timing classes must be supplied together")
+        tvla_result = (
+            cls.run_welch_t_test(tvla_samples_c0 or [], tvla_samples_c1 or [])
+            if has_c0 and has_c1
+            else None
+        )
+
+        if tvla_result and tvla_result.leakage_verdict == "FAIL_LEAKAGE_DETECTED":
+            status = "LEAKAGE_SIGNAL_DETECTED"
+        elif ast_result and not ast_result.is_clean:
+            status = "POTENTIAL_TIMING_RISK"
+        elif tvla_result and tvla_result.leakage_verdict == "SUSPICIOUS_MARGINAL":
+            status = "INCONCLUSIVE"
+        elif tvla_result is not None and ast_result is not None:
+            status = "NO_LEAKAGE_DETECTED_IN_PROVIDED_CHECKS"
+        elif tvla_result is not None or ast_result is not None:
+            status = "PARTIAL_CHECK_ONLY"
+        else:
+            status = "INSUFFICIENT_EVIDENCE"
+
+        return VerificationReport(
+            target_name=target_name,
+            timestamp_utc=_dt.datetime.now(_dt.timezone.utc).isoformat(),
+            tvla_result=tvla_result,
+            static_audit=ast_result,
+            overall_status=status,
+        )
+
+    @classmethod
+    def evaluate_batch_csv(cls, csv_text: str) -> List[VerificationReport]:
+        """Evaluate rows containing raw timing samples.
+
+        Required columns are ``target_name``, ``class0_samples_ns`` and
+        ``class1_samples_ns``. Timing cells accept semicolon-, comma-, or whitespace-separated
+        numbers. ``source_code`` is optional. Summary statistics are intentionally not expanded
+        into synthetic observations because doing so can create misleading test statistics.
+        """
+
+        def parse_samples(value: str) -> List[float]:
+            normalized = value.replace(";", " ").replac
