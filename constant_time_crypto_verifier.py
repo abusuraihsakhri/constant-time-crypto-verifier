@@ -282,4 +282,120 @@ class ConstantTimeVerifierEngine:
                     "measurements and environmental controls."
                 )
             else:
-                verdict = "PASS_C
+                verdict = "PASS_CONSTANT_TIME"
+                interpretation = (
+                    "|t| is below 2.5 for this sample; no timing difference was detected at the "
+                    "configured screening threshold. This is not proof of constant-time execution."
+                )
+
+        ratio = s0.mean_duration_ns / s1.mean_duration_ns if s1.mean_duration_ns != 0 else None
+        return TVLATestResult(
+            class0_stats=s0,
+            class1_stats=s1,
+            welch_t_statistic=t_stat,
+            degrees_of_freedom=dof,
+            absolute_t_score=abs_t,
+            leakage_verdict=verdict,
+            confidence_level=interpretation,
+            max_timing_difference_ns=abs(mean_diff),
+            timing_ratio=ratio,
+        )
+
+    @classmethod
+    def benchmark_comparison(
+        cls,
+        func: Callable[[Any, Any], Any],
+        class0_generator: Callable[[], Tuple[Any, Any]],
+        class1_generator: Callable[[], Tuple[Any, Any]],
+        num_traces: int = 2000,
+        warmup_iterations: int = 100,
+    ) -> TVLATestResult:
+        """Collect interleaved timings and run the Welch statistic without class-wise trimming."""
+
+        if num_traces < 2:
+            raise ValueError("num_traces must be at least 2")
+        if warmup_iterations < 0:
+            raise ValueError("warmup_iterations cannot be negative")
+
+        for _ in range(warmup_iterations):
+            func(*class0_generator())
+            func(*class1_generator())
+
+        class0_times: List[float] = []
+        class1_times: List[float] = []
+        for _ in range(num_traces):
+            order = (0, 1) if random.getrandbits(1) == 0 else (1, 0)
+            for klass in order:
+                generator = class0_generator if klass == 0 else class1_generator
+                args = generator()
+                started = time.perf_counter_ns()
+                func(*args)
+                elapsed = float(time.perf_counter_ns() - started)
+                (class0_times if klass == 0 else class1_times).append(elapsed)
+
+        return cls.run_welch_t_test(class0_times, class1_times)
+
+    @classmethod
+    def _expression_mentions_secret(cls, node: ast.AST) -> bool:
+        try:
+            text = ast.unparse(node).lower()
+        except Exception:
+            return False
+        return any(keyword in text for keyword in cls._SECRET_KEYWORDS)
+
+    @classmethod
+    def scan_source_code_ast(cls, source_code: str) -> StaticASTAuditResult:
+        """Heuristically flag Python AST patterns that may create data-dependent timing.
+
+        This is a lexical/structural heuristic, not formal verification. Findings should be
+        reviewed manually and, where possible, checked against generated machine code or a
+        dedicated constant-time analysis tool.
+        """
+
+        if not isinstance(source_code, str):
+            raise TypeError("source_code must be a string")
+        findings: List[StaticCodeVulnerability] = []
+        try:
+            tree = ast.parse(source_code)
+        except SyntaxError as exc:
+            findings.append(
+                StaticCodeVulnerability(
+                    line_number=exc.lineno or 1,
+                    vulnerability_type="SYNTAX_ERROR",
+                    severity="HIGH",
+                    code_snippet=(exc.text or "").strip() or str(exc),
+                    explanation="The source could not be parsed as Python.",
+                    remediation="Fix the syntax error before interpreting static-analysis results.",
+                )
+            )
+            return StaticASTAuditResult(False, findings, 1, 100.0)
+
+        lines = source_code.splitlines()
+
+        def snippet(line_number: int, fallback: str) -> str:
+            if 0 < line_number <= len(lines):
+                return lines[line_number - 1].strip()
+            return fallback
+
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.If, ast.IfExp)) and cls._expression_mentions_secret(node.test):
+                test_text = ast.unparse(node.test)
+                findings.append(
+                    StaticCodeVulnerability(
+                        node.lineno,
+                        "SECRET_BRANCH",
+                        "HIGH",
+                        snippet(node.lineno, test_text),
+                        "A branch condition appears to depend on a secret-like identifier.",
+                        "Use a vetted constant-time primitive or redesign the data flow to avoid secret-dependent branching.",
+                    )
+                )
+            elif isinstance(node, ast.Subscript) and cls._expression_mentions_secret(node.slice):
+                slice_text = ast.unparse(node.slice)
+                findings.append(
+                    StaticCodeVulnerability(
+                        node.lineno,
+                        "SECRET_INDEXED_LOOKUP",
+                        "HIGH",
+                        snippet(node.lineno, slice_text),
+                        "A lookup index appears to depend on a secret-like identifier and 
