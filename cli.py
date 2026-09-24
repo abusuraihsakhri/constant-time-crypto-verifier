@@ -236,3 +236,24 @@ def build_parser() -> argparse.ArgumentParser:
     serve = subparsers.add_parser("serve", help="Launch the optional FastAPI server")
     serve.add_argument("--host", default="127.0.0.1")
     serve.add_argument("--port", type=int, default=8000)
+    return parser
+
+
+def main(argv: Iterable[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(list(argv) if argv is not None else None)
+    try:
+        if args.command == "scan":
+            return _run_scan(args)
+        if args.command == "tvla":
+            return _run_tvla(args)
+        if args.command == "verify":
+            return _run_verify(args)
+        return _run_legacy(args)
+    except (OSError, TypeError, ValueError, RuntimeError) as exc:
+        parser.error(str(exc))
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())
