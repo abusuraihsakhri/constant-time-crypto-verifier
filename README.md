@@ -1,5 +1,7 @@
 # Constant-Time Crypto Verifier
 
+### [Open the Live Application →](https://abusuraihsakhri.github.io/constant-time-crypto-verifier/)
+
 A small Python toolkit for screening timing traces and Python source code for potential data-dependent timing behavior.
 
 ## What it does
