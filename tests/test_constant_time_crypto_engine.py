@@ -82,6 +82,31 @@ def test_static_scan_syntax_error():
     assert result.vulnerabilities[0].vulnerability_type == "SYNTAX_ERROR"
 
 
+def test_static_scan_uses_identifier_tokens_not_substrings():
+    source = """
+def classify(monkey, value):
+    if monkey == value:
+        return 1
+    return 0
+"""
+    result = ConstantTimeVerifierEngine.scan_source_code_ast(source)
+    assert result.is_clean is True
+    assert result.total_findings == 0
+
+
+def test_static_scan_does_not_flag_unconditional_loop_exit_as_secret_dependent():
+    source = """
+def first_mix(secret, values):
+    for value in values:
+        mixed = secret ^ value
+        return mixed
+    return 0
+"""
+    result = ConstantTimeVerifierEngine.scan_source_code_ast(source)
+    kinds = {item.vulnerability_type for item in result.vulnerabilities}
+    assert "SECRET_DEPENDENT_EARLY_EXIT" not in kinds
+
+
 def test_verification_statuses_are_conservative():
     assert ConstantTimeVerifierEngine.verify_target("none").overall_status == "INSUFFICIENT_EVIDENCE"
 
